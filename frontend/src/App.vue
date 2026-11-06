@@ -5,6 +5,7 @@ const STORAGE_KEY = "satrlarim-entries-v1";
 const TOKEN_STORAGE_KEY = "satrlarim-api-token-v1";
 const OWNER_STORAGE_KEY = "satrlarim-api-owner-v1";
 const IMPORT_STORAGE_PREFIX = "satrlarim-postgres-imported-v1:";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
 const LOCKED_TEXT = "[locked]";
 const ENCRYPTION_ITERATIONS = 310000;
 
@@ -299,7 +300,7 @@ function setSession(session) {
 }
 
 async function createAnonymousSession() {
-  const response = await fetch("/api/auth/anonymous", { method: "POST" });
+  const response = await fetch(`${API_BASE_URL}/auth/anonymous`, { method: "POST" });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || "Backend sessiyasini yaratib bo‘lmadi.");
   setSession(payload);
@@ -309,7 +310,7 @@ async function apiRequest(path, options = {}, mayRetry = true) {
   const headers = new Headers(options.headers || {});
   if (options.body) headers.set("Content-Type", "application/json");
   if (apiToken.value) headers.set("Authorization", `Bearer ${apiToken.value}`);
-  const response = await fetch(`/api${path}`, { ...options, headers });
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
 
   if (response.status === 401 && mayRetry && path !== "/auth/anonymous") {
     await createAnonymousSession();

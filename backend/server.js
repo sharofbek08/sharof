@@ -11,10 +11,13 @@ const { Pool } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(__dirname, "..");
 const frontendDist = join(rootDir, "frontend", "dist");
-dotenv.config({ path: join(rootDir, ".env") });
+dotenv.config({ path: join(__dirname, ".env") });
 const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
 const JWT_SECRET = process.env.JWT_SECRET;
 const DATABASE_URL = process.env.DATABASE_URL;
+const DATABASE_SSL = process.env.DATABASE_SSL === "true";
+const WEB_ORIGIN = process.env.WEB_ORIGIN?.replace(/\/+$/, "");
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 const LOCKED_TEXT = "[locked]";
 
@@ -23,10 +26,24 @@ if (!JWT_SECRET || JWT_SECRET.length < 32) {
   throw new Error("JWT_SECRET kamida 32 belgidan iborat bo‘lishi kerak.");
 }
 
-const pool = new Pool({ connectionString: DATABASE_URL });
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ...(DATABASE_SSL ? { ssl: { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== "false" } } : {})
+});
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "128kb" }));
+app.use((req, res, next) => {
+  const origin = req.get("origin");
+  if (!WEB_ORIGIN || !origin) return next();
+  if (origin !== WEB_ORIGIN) return res.status(403).json({ error: "Bu manzildan API'ga kirishga ruxsat yo‘q." });
+  res.set("Access-Control-Allow-Origin", WEB_ORIGIN);
+  res.set("Vary", "Origin");
+  res.set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  if (req.method === "OPTIONS") return res.status(204).end();
+  next();
+});
 
 function createToken(ownerId) {
   const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
@@ -253,8 +270,8 @@ app.use((error, _req, res, _next) => {
 async function start() {
   const schema = await readFile(join(__dirname, "schema.sql"), "utf8");
   await pool.query(schema);
-  const server = app.listen(PORT, "127.0.0.1", () => {
-    console.log(`Backend: http://127.0.0.1:${PORT}`);
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`Backend: http://${HOST}:${PORT}`);
   });
 
   for (const signal of ["SIGINT", "SIGTERM"]) {
